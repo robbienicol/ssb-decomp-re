@@ -15,7 +15,11 @@ extern void portFixupStructU16(void *base, unsigned int byte_offset, unsigned in
 // // // // // // // // // // // //
 
 // WARNING: Intentionally erroneous declaration. Missing two u16 arguments after f32. HAL's mistake, not mine.
+#ifdef PORT
+extern void itMainSetFighterRelease(GObj*, Vec3f*, f32, u16, u16);
+#else
 extern void itMainSetFighterRelease(GObj*, Vec3f*, f32);
+#endif
 
 // // // // // // // // // // // //
 //                               //
@@ -405,7 +409,14 @@ sb32 itLinkBombHoldProcUpdate(GObj *item_gobj)
 			// Update 3/23/2023: itMainSetFighterRelease matches as variadic. No comment.
 			// Update  7/2/2023: variadic match confirmed fake, so does this file really use an erroneous decleration?
 
+#ifdef PORT
+			/* The missing stat arguments were stale registers on N64; the
+			 * owner stats are cleared right below, so pass zero. A 3-argument
+			 * call to the 5-argument function also traps in WebAssembly. */
+			itMainSetFighterRelease(item_gobj, &ip->physics.vel_air, 1.0F, 0, 0);
+#else
 			itMainSetFighterRelease(item_gobj, &ip->physics.vel_air, 1.0F);
+#endif
 			itMainClearOwnerStats(item_gobj);
 			itLinkBombExplodeInitVars(item_gobj);
 		}

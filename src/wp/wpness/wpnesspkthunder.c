@@ -450,7 +450,11 @@ GObj* wpNessPKThunderTrailMakeWeapon(GObj *head_gobj, Vec3f *pos, s32 trail_id)
 
     if (trail_id == 0)
     {
+#ifdef PORT
+        trail_wp->group_id = wpManagerGetGroupID();
+#else
         trail_wp->group_id = wpManagerGetGroupID(head_gobj, trail_gobj); // Bruh this doesn't any take arguments but it doesn't match otherwise
+#endif
     }
     else trail_wp->group_id = head_wp->group_id;
 

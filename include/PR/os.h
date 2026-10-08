@@ -899,7 +899,7 @@ extern "C"
 	/* Address translation routines and macros */
 
 #ifdef PORT
-	extern u64 osVirtualToPhysical(void*);
+	extern __UINTPTR_TYPE__ osVirtualToPhysical(void*);
 #else
 	extern u32 osVirtualToPhysical(void*);
 #endif
