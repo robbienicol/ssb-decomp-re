@@ -224,6 +224,9 @@ SYTaskAudio *sSYAudioSchedulerTasks[2];
 ALBank *sSYAudioSequenceBank1;
 
 // 0x8009D954
+#ifdef PORT
+extern int gPortHeadlessTick;
+#endif
 alSoundEffect **sSYAudioSoundPlayers;
 
 // 0x8009D958
@@ -1140,6 +1143,10 @@ void syAudioThreadMain(void *arg)
         {
             osRecvMesg(&sSYAudioTicMesgQueue, NULL, OS_MESG_BLOCK);
 
+            if (gPortHeadlessTick != 0)
+            {
+                continue;
+            }
             port_i = dSYAudioCurrentTic & 1;
             sSYAudioCurrentAcmdListBuffer = sSYAudioAcmdListBuffers[port_i];
             port_id_mod3 = dSYAudioCurrentTic % 3;

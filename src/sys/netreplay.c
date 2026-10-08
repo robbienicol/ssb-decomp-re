@@ -501,3 +501,16 @@ sb32 syNetReplayLoadDebugFile(const char *path)
 #endif
 	return TRUE;
 }
+
+/* Reads one frame of the loaded playback file (rollback tests drive the
+ * local player from it). */
+sb32 syNetReplayGetLoadedFrame(s32 player, u32 tick, SYNetInputFrame *out_frame)
+{
+	if ((sSYNetReplayIsPlaybackLoaded == FALSE) || (player < 0) || (player >= MAXCONTROLLERS) ||
+		(tick >= sSYNetReplayLoadedFrameCount) || (out_frame == NULL))
+	{
+		return FALSE;
+	}
+	*out_frame = sSYNetReplayLoadedFrames[player][tick];
+	return TRUE;
+}

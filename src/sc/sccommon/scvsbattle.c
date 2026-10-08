@@ -15,6 +15,9 @@ extern void port_coroutine_yield(void);
 #include <it/itmanager.h>
 #include <sys/audio.h>
 #include <wp/wpmanager.h>
+#ifdef PORT
+extern void port_rollback_on_battle_start(void);
+#endif
 extern void *func_800269C0_275C0(u16 id);
 extern void func_800266A0_272A0(void);
 
@@ -264,6 +267,9 @@ void scVSBattleStartBattle(void)
 	syNetReplayStartVSSession(gSCManagerBattleState);
 	syNetSyncStartVSSession();
 	syNetPeerStartVSSession();
+#ifdef PORT
+	port_rollback_on_battle_start();
+#endif
 
 	gSCManagerSceneData.is_reset = FALSE;
 	gSCManagerSceneData.is_suddendeath = FALSE;

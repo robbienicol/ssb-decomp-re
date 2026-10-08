@@ -39,11 +39,15 @@ _Static_assert(sizeof(uintptr_t) == 8 || sizeof(uintptr_t) == 4,
  * tripping through the taskman API. See docs/bugs/dl_link_stale_pointer
  * _guard_2026-05-09.md for the recycle rationale. */
 void *gPortSceneHeap = NULL;
+void *gPortArenaSimStart = NULL;
 const size_t gPortSceneHeapSize = 16 * 1024 * 1024;
 #endif
 
 // externs
 extern void syTaskmanCheckBufferLengths();
+#ifdef PORT
+extern int gPortHeadlessTick;
+#endif
 
 // structures
 typedef struct SYTaskmanUcode
@@ -1127,7 +1131,15 @@ void syTaskmanRunTask(SYTaskFunction *tfunc)
 		{
 			break;
 		}
+#ifdef PORT
+		/* Rollback re-simulation runs ticks headless: no draw pass. Drawing
+		 * never feeds gameplay (the engine already drops draws when no gfx
+		 * context is free), so the simulated state is unchanged. */
+		if ((gPortHeadlessTick == 0) && (dSYTaskmanUpdateCount % sSYTaskmanFrameInterval == 0) &&
+		    (syTaskmanSwitchContext(1) != FALSE))
+#else
 		if ((dSYTaskmanUpdateCount % sSYTaskmanFrameInterval == 0) && (syTaskmanSwitchContext(1) != FALSE))
+#endif
 		{
 			sSYTaskmanTimeStart = osGetCount();
 
@@ -1301,6 +1313,10 @@ void syTaskmanLoadScene(SYTaskmanSceneSetup *tscene, void (*func_start)(void))
 	dSYTaskmanUpdateCount = dSYTaskmanFrameCount = 0;
 
 #ifdef PORT
+	/* Everything allocated before this point is the scene's render pipeline
+	 * (task nodes, DL buffers, graphics heaps); everything after belongs to
+	 * the simulation. Rollback snapshots only the latter. */
+	gPortArenaSimStart = gSYTaskmanGeneralHeap.ptr;
 	port_log("SSB64: syTaskmanLoadScene — about to call func_start=%p\n", (void *)func_start);
 #endif
 	if (func_start != NULL)
