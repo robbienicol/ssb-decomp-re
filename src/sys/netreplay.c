@@ -302,16 +302,60 @@ static sb32 syNetReplayParseBattleSpec(const char *spec, SYNetInputReplayMetadat
 	return TRUE;
 }
 
+/* The battle's game_status (nSCBattleGameStatus*): Wait during the opening
+ * countdown, Go while fighting, End then Wait again once it is decided. */
+s32 syNetReplayGetGameStatus(void)
+{
+	return (gSCManagerBattleState != NULL) ? gSCManagerBattleState->game_status : -1;
+}
+
+/* Cheap per-frame checksum for rollback desync detection: the RNG plus every
+ * player's score/damage counters. Reads only plain battle state (no object
+ * lists), so it is safe while fighters are being removed. */
+u32 syNetReplayQuickChecksum(void)
+{
+	SCBattleState *bs = gSCManagerBattleState;
+	u32 h = 2166136261U;
+	s32 i;
+
+#define SYNETREPLAY_MIX(v) (h = (h ^ (u32)(v)) * 16777619U)
+	SYNETREPLAY_MIX(syUtilsRandSeed());
+	if (bs == NULL)
+	{
+		return h;
+	}
+	SYNETREPLAY_MIX(bs->game_status);
+	SYNETREPLAY_MIX(bs->time_passed);
+	for (i = 0; i < GMCOMMON_PLAYERS_MAX; i++)
+	{
+		SCPlayerData *pl = &bs->players[i];
+
+		SYNETREPLAY_MIX(pl->stock_count);
+		SYNETREPLAY_MIX(pl->falls);
+		SYNETREPLAY_MIX(pl->score);
+		SYNETREPLAY_MIX(pl->total_damage_given);
+		SYNETREPLAY_MIX(pl->total_damage_all);
+		SYNETREPLAY_MIX(pl->stock_damage_all);
+		SYNETREPLAY_MIX(pl->combo_count_foe);
+	}
+#undef SYNETREPLAY_MIX
+	return h;
+}
+
 /* Final standings of the VS battle as JSON, for the website. Stock battles
  * assign place as players are eliminated; the winner keeps place 0. */
 s32 syNetReplayDescribeResults(char *buf, s32 cap)
 {
-	SCBattleState *bs = &gSCManagerVSBattleState;
+	SCBattleState *bs = gSCManagerBattleState;
 	const char *sep = "";
 	s32 at;
 	s32 i;
 	s32 j;
 
+	if (bs == NULL)
+	{
+		return snprintf(buf, cap, "{\"players\":[]}");
+	}
 	at = snprintf(buf, cap, "{\"stage\":%d,\"time\":%u,\"players\":[", bs->gkind, bs->time_passed);
 
 	for (i = 0; (i < GMCOMMON_PLAYERS_MAX) && (at < cap); i++)

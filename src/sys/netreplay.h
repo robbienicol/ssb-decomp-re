@@ -14,6 +14,8 @@ extern void syNetReplayFinishVSSession(void);
 extern sb32 syNetReplayWriteDebugFile(const char *path);
 extern sb32 syNetReplayLoadDebugFile(const char *path);
 extern s32 syNetReplayDescribeResults(char *buf, s32 cap);
+extern s32 syNetReplayGetGameStatus(void);
+extern u32 syNetReplayQuickChecksum(void);
 extern sb32 syNetReplayGetLoadedFrame(s32 player, u32 tick, SYNetInputFrame *out_frame);
 
 #endif /* _SYNETREPLAY_H_ */
