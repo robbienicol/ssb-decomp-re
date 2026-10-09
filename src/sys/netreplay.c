@@ -2,6 +2,7 @@
 #include <sys/netsync.h>
 
 #include <ft/fighter.h>
+#include <ft/ftparam.h>
 #include <if/ifcommon.h>
 #include <sc/scmanager.h>
 #include <sys/netinput.h>
@@ -203,6 +204,7 @@ static s32 syNetReplayParseList(const char *value, s32 *out, s32 max)
 /* Online matches set up by the website boot straight into a VS battle. Every
  * peer gets the same string, e.g.
  *   SSB64_NETPLAY_BATTLE="stage=6 seed=1234 stocks=4 fighters=0,1 costumes=0,1"
+ * (costumes are VS colors 0-3; duplicate fighters need different colors)
  * Optional: time=<minutes, 100 = no limit; competitive ruleset only>
  * teams=<team per player>
  * items=<appearance rate 0-5> damage=<percent>. */
@@ -294,7 +296,8 @@ static sb32 syNetReplayParseBattleSpec(const char *spec, SYNetInputReplayMetadat
 	{
 		m->player_kinds[player] = (player < count) ? nFTPlayerKindMan : nFTPlayerKindNot;
 		m->fighter_kinds[player] = (player < count) ? fighters[player] : 0;
-		m->costumes[player] = costumes[player];
+		/* costumes= gives the VS color (0-3, the CSS C-button colors) */
+		m->costumes[player] = (player < count) ? ftParamGetCostumeCommonID(fighters[player], costumes[player] & 3) : 0;
 		m->teams[player] = teams[player];
 		m->handicaps[player] = 9;
 		m->levels[player] = 1;
