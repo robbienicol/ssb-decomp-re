@@ -16,6 +16,9 @@ extern void port_log(const char *fmt, ...);
 extern void port_exit_process(int code);
 extern char *getenv(const char *name);
 extern int atoi(const char *s);
+extern int strncmp(const char *a, const char *b, __SIZE_TYPE__ n);
+extern unsigned long strtoul(const char *s, char **end, int base);
+extern int snprintf(char *buf, __SIZE_TYPE__ cap, const char *fmt, ...);
 #endif
 
 #define SYNETREPLAY_DEFAULT_RECORD_FRAMES 1800
@@ -46,6 +49,9 @@ sb32 sSYNetReplayIsPlaybackVerified;
  * code (0 PASS, 1 FAIL, 2 playback ended before the replay did). */
 sb32 sSYNetReplayRigExit;
 SYNetInputReplayMetadata sSYNetReplayLoadedMetadata;
+/* SSB64_NETPLAY_BATTLE: an online match set up by the website. */
+sb32 sSYNetReplayIsNetplayBattle;
+SYNetInputReplayMetadata sSYNetReplayNetplayMetadata;
 SYNetInputFrame sSYNetReplayLoadedFrames[MAXCONTROLLERS][SYNETINPUT_REPLAY_MAX_FRAMES];
 
 void syNetReplayClearLoadedFrames(void)
@@ -172,6 +178,170 @@ void syNetReplayApplyBattleMetadata(const SYNetInputReplayMetadata *metadata)
 	gSCManagerSceneData.gkind = metadata->stage_kind;
 }
 
+#ifdef PORT
+/* Parses up to max comma-separated integers; stops at a space or ';'. */
+static s32 syNetReplayParseList(const char *value, s32 *out, s32 max)
+{
+	s32 count = 0;
+
+	while ((*value != '\0') && (*value != ' ') && (*value != ';') && (count < max))
+	{
+		out[count++] = atoi(value);
+
+		while ((*value != '\0') && (*value != ',') && (*value != ' ') && (*value != ';'))
+		{
+			value++;
+		}
+		if (*value == ',')
+		{
+			value++;
+		}
+	}
+	return count;
+}
+
+/* Online matches set up by the website boot straight into a VS battle. Every
+ * peer gets the same string, e.g.
+ *   SSB64_NETPLAY_BATTLE="stage=6 seed=1234 stocks=4 fighters=0,1 costumes=0,1"
+ * Optional: time=<minutes, 100 = no limit; competitive ruleset only>
+ * teams=<team per player>
+ * items=<appearance rate 0-5> damage=<percent>. */
+static sb32 syNetReplayParseBattleSpec(const char *spec, SYNetInputReplayMetadata *m)
+{
+	s32 fighters[MAXCONTROLLERS] = { 0 };
+	s32 costumes[MAXCONTROLLERS] = { 0 };
+	s32 teams[MAXCONTROLLERS] = { 0, 1, 2, 3 };
+	s32 count = 0;
+	sb32 is_teams = FALSE;
+	s32 player;
+	const char *p = spec;
+
+	memset(m, 0, sizeof(*m));
+	m->magic = SYNETINPUT_REPLAY_MAGIC;
+	m->version = SYNETINPUT_REPLAY_VERSION;
+	m->scene_kind = nSCKindVSBattle;
+	m->stage_kind = 6; /* Dream Land */
+	m->stocks = 3; /* four lives */
+	m->time_limit = 100; /* no limit */
+	m->rng_seed = 1;
+	m->game_type = 1;
+	m->game_rules = 0x2; /* stock */
+	m->damage_ratio = 100;
+	m->item_appearance_rate = nSCBattleItemSwitchNone;
+
+	while (*p != '\0')
+	{
+		s32 value[1];
+
+		while ((*p == ' ') || (*p == ';'))
+		{
+			p++;
+		}
+		if (strncmp(p, "stage=", 6) == 0)
+		{
+			m->stage_kind = atoi(p + 6);
+		}
+		else if (strncmp(p, "seed=", 5) == 0)
+		{
+			m->rng_seed = (u32)strtoul(p + 5, NULL, 10);
+		}
+		else if (strncmp(p, "stocks=", 7) == 0)
+		{
+			/* the game counts stocks from 0: 4 stocks are stored as 3 */
+			syNetReplayParseList(p + 7, value, 1);
+			m->stocks = (value[0] > 0) ? value[0] - 1 : 0;
+		}
+		else if (strncmp(p, "time=", 5) == 0)
+		{
+			m->time_limit = atoi(p + 5);
+		}
+		else if (strncmp(p, "items=", 6) == 0)
+		{
+			m->item_appearance_rate = atoi(p + 6);
+		}
+		else if (strncmp(p, "damage=", 7) == 0)
+		{
+			m->damage_ratio = atoi(p + 7);
+		}
+		else if (strncmp(p, "fighters=", 9) == 0)
+		{
+			count = syNetReplayParseList(p + 9, fighters, MAXCONTROLLERS);
+		}
+		else if (strncmp(p, "costumes=", 9) == 0)
+		{
+			syNetReplayParseList(p + 9, costumes, MAXCONTROLLERS);
+		}
+		else if (strncmp(p, "teams=", 6) == 0)
+		{
+			syNetReplayParseList(p + 6, teams, MAXCONTROLLERS);
+			is_teams = TRUE;
+		}
+		while ((*p != '\0') && (*p != ' ') && (*p != ';'))
+		{
+			p++;
+		}
+	}
+	if ((count < 2) || (count > MAXCONTROLLERS))
+	{
+		return FALSE;
+	}
+	m->player_count = count;
+	m->item_switch = m->item_appearance_rate;
+	m->is_team_battle = is_teams;
+	m->game_rules = 0x2; /* stock (the time limit applies under the competitive ruleset) */
+
+	for (player = 0; player < MAXCONTROLLERS; player++)
+	{
+		m->player_kinds[player] = (player < count) ? nFTPlayerKindMan : nFTPlayerKindNot;
+		m->fighter_kinds[player] = (player < count) ? fighters[player] : 0;
+		m->costumes[player] = costumes[player];
+		m->teams[player] = teams[player];
+		m->handicaps[player] = 9;
+		m->levels[player] = 1;
+	}
+	return TRUE;
+}
+
+/* Final standings of the VS battle as JSON, for the website. Stock battles
+ * assign place as players are eliminated; the winner keeps place 0. */
+s32 syNetReplayDescribeResults(char *buf, s32 cap)
+{
+	SCBattleState *bs = &gSCManagerVSBattleState;
+	const char *sep = "";
+	s32 at;
+	s32 i;
+	s32 j;
+
+	at = snprintf(buf, cap, "{\"stage\":%d,\"time\":%u,\"players\":[", bs->gkind, bs->time_passed);
+
+	for (i = 0; (i < GMCOMMON_PLAYERS_MAX) && (at < cap); i++)
+	{
+		SCPlayerData *pl = &bs->players[i];
+		s32 kos = 0;
+
+		if (pl->pkind == nFTPlayerKindNot)
+		{
+			continue;
+		}
+		for (j = 0; j < GMCOMMON_PLAYERS_MAX; j++)
+		{
+			kos += pl->total_kos_players[j];
+		}
+		at += snprintf(buf + at, cap - at,
+		               "%s{\"slot\":%d,\"fighter\":%d,\"place\":%d,\"stocks\":%d,\"falls\":%d,"
+		               "\"kos\":%d,\"sds\":%d,\"damage\":%d}",
+		               sep, i, pl->fkind, pl->place, pl->stock_count, pl->falls, kos, pl->total_selfdestructs,
+		               pl->total_damage_given);
+		sep = ",";
+	}
+	if (at < cap)
+	{
+		at += snprintf(buf + at, cap - at, "]}");
+	}
+	return (at < cap) ? at : cap - 1;
+}
+#endif
+
 void syNetReplayInitDebugEnv(void)
 {
 #ifdef PORT
@@ -193,6 +363,26 @@ void syNetReplayInitDebugEnv(void)
 		if ((frame_limit > 0) && (frame_limit < SYNETINPUT_REPLAY_MAX_FRAMES))
 		{
 			sSYNetReplayRecordFrameLimit = frame_limit;
+		}
+	}
+	if ((sSYNetReplayPlayPath == NULL) && (getenv("SSB64_NETPLAY_BATTLE") != NULL))
+	{
+		const char *spec = getenv("SSB64_NETPLAY_BATTLE");
+
+		if (syNetReplayParseBattleSpec(spec, &sSYNetReplayNetplayMetadata) != FALSE)
+		{
+			sSYNetReplayIsNetplayBattle = TRUE;
+			syNetReplayApplyBattleMetadata(&sSYNetReplayNetplayMetadata);
+			syUtilsSetRandomSeed(sSYNetReplayNetplayMetadata.rng_seed);
+			gSCManagerSceneData.scene_prev = nSCKindVSMode;
+			gSCManagerSceneData.scene_curr = nSCKindVSBattle;
+			port_log("SSB64 Netplay: battle spec \"%s\" stage=%u players=%u seed=%u\n", spec,
+			         sSYNetReplayNetplayMetadata.stage_kind, sSYNetReplayNetplayMetadata.player_count,
+			         sSYNetReplayNetplayMetadata.rng_seed);
+		}
+		else
+		{
+			port_log("SSB64 Netplay: bad battle spec \"%s\"\n", spec);
 		}
 	}
 	if (sSYNetReplayPlayPath != NULL)
@@ -227,6 +417,11 @@ void syNetReplayStartVSSession(SCBattleState *battle_state)
 	u32 tick;
 	s32 player;
 
+	if (sSYNetReplayIsNetplayBattle != FALSE)
+	{
+		/* Every peer starts the battle from the same seed, whatever ran before. */
+		syUtilsSetRandomSeed(sSYNetReplayNetplayMetadata.rng_seed);
+	}
 	if (sSYNetReplayIsPlaybackLoaded != FALSE)
 	{
 		syNetInputClearReplayFrames();
