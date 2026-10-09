@@ -47,6 +47,7 @@ const size_t gPortSceneHeapSize = 16 * 1024 * 1024;
 extern void syTaskmanCheckBufferLengths();
 #ifdef PORT
 extern int gPortHeadlessTick;
+extern int gPortSkipDrawTick;
 #endif
 
 // structures
@@ -1132,10 +1133,12 @@ void syTaskmanRunTask(SYTaskFunction *tfunc)
 			break;
 		}
 #ifdef PORT
-		/* Rollback re-simulation runs ticks headless: no draw pass. Drawing
+		/* Rollback re-simulation runs ticks headless: no draw pass (nor when
+		 * the browser build skips drawing to catch up after a slow frame). Drawing
 		 * never feeds gameplay (the engine already drops draws when no gfx
 		 * context is free), so the simulated state is unchanged. */
-		if ((gPortHeadlessTick == 0) && (dSYTaskmanUpdateCount % sSYTaskmanFrameInterval == 0) &&
+		if ((gPortHeadlessTick == 0) && (gPortSkipDrawTick == 0) &&
+		    (dSYTaskmanUpdateCount % sSYTaskmanFrameInterval == 0) &&
 		    (syTaskmanSwitchContext(1) != FALSE))
 #else
 		if ((dSYTaskmanUpdateCount % sSYTaskmanFrameInterval == 0) && (syTaskmanSwitchContext(1) != FALSE))
