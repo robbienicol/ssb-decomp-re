@@ -213,6 +213,7 @@ static sb32 syNetReplayParseBattleSpec(const char *spec, SYNetInputReplayMetadat
 	s32 fighters[MAXCONTROLLERS] = { 0 };
 	s32 costumes[MAXCONTROLLERS] = { 0 };
 	s32 teams[MAXCONTROLLERS] = { 0, 1, 2, 3 };
+	s32 cpus[MAXCONTROLLERS] = { 0 };
 	s32 count = 0;
 	sb32 is_teams = FALSE;
 	s32 player;
@@ -273,6 +274,12 @@ static sb32 syNetReplayParseBattleSpec(const char *spec, SYNetInputReplayMetadat
 		{
 			syNetReplayParseList(p + 9, costumes, MAXCONTROLLERS);
 		}
+		else if (strncmp(p, "cpus=", 5) == 0)
+		{
+			/* CPU level (1-9) per slot, 0 = human. Every peer simulates the
+			 * CPU identically, so it plays online like anyone else. */
+			syNetReplayParseList(p + 5, cpus, MAXCONTROLLERS);
+		}
 		else if (strncmp(p, "teams=", 6) == 0)
 		{
 			syNetReplayParseList(p + 6, teams, MAXCONTROLLERS);
@@ -294,13 +301,14 @@ static sb32 syNetReplayParseBattleSpec(const char *spec, SYNetInputReplayMetadat
 
 	for (player = 0; player < MAXCONTROLLERS; player++)
 	{
-		m->player_kinds[player] = (player < count) ? nFTPlayerKindMan : nFTPlayerKindNot;
+		m->player_kinds[player] = (player >= count) ? nFTPlayerKindNot
+		                          : ((cpus[player] > 0) ? nFTPlayerKindCom : nFTPlayerKindMan);
 		m->fighter_kinds[player] = (player < count) ? fighters[player] : 0;
 		/* costumes= gives the VS color (0-3, the CSS C-button colors) */
 		m->costumes[player] = (player < count) ? ftParamGetCostumeCommonID(fighters[player], costumes[player] & 3) : 0;
 		m->teams[player] = teams[player];
 		m->handicaps[player] = 9;
-		m->levels[player] = 1;
+		m->levels[player] = ((cpus[player] > 0) && (cpus[player] <= 9)) ? cpus[player] : ((cpus[player] > 9) ? 9 : 1);
 	}
 	return TRUE;
 }
